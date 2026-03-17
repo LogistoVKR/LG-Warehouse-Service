@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:2345/mercurio
+    username: mercurio
+    password: mercurio
+    hikari:
+      minimum-idle: 1
+      maximum-pool-size: 2
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:9090/realms/mercurio
+      client:
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:9090/realms/mercurio
+        registration:
+          keycloak:
+            client-id: mc-backend
+            client-secret: client_secret
+            authorization-grant-type: client_credentials
+
+application:
+  rest:
+    mc-user-service:
+      url: http://localhost:9091

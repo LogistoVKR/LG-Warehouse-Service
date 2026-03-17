@@ -1,0 +1,15 @@
+package kz.logisto.lgwarehouseservice.data.repository;
+
+import kz.logisto.lgwarehouseservice.data.entity.Item;
+import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificationExecutor<Item> {
+
+  Page<Item> findAllByOrganizationId(UUID organizationId, Pageable pageable);
+}

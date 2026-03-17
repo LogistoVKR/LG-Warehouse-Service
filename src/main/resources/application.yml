@@ -1,0 +1,45 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /warehouse-service
+
+spring:
+  application:
+    name: lg-warehouse-service
+  datasource:
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    properties:
+      hibernate:
+        default_schema: mc_warehouse_service
+    show-sql: true
+  flyway:
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
+    default-schema: ${spring.jpa.properties.hibernate.default_schema}
+    locations: classpath:db/migration/
+
+application:
+  rest:
+    mc-user-service:
+      connect-timeout: 500ms
+      read-timeout: 1s
+      context-path: /user-service
+
+logging:
+  level:
+    root: info
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.99, 0.95, 0.9, 0.5
+

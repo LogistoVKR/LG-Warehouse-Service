@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:2345/mercurio
+    url: jdbc:postgresql://localhost:5432/mercurio
     username: mercurio
     password: mercurio
     hikari:
@@ -10,18 +10,18 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:9090/realms/mercurio
+          issuer-uri: http://localhost:9090/realms/logisto
       client:
         provider:
           keycloak:
-            issuer-uri: http://localhost:9090/realms/mercurio
+            issuer-uri: http://localhost:9090/realms/logisto
         registration:
           keycloak:
-            client-id: mc-backend
-            client-secret: client_secret
+            client-id: lg-backend
+            client-secret: TFgShCxIbClranUMiQ1eCdVUlE65BRxQ
             authorization-grant-type: client_credentials
 
 application:
   rest:
     mc-user-service:
-      url: http://localhost:9091
+      url: http://localhost:8082

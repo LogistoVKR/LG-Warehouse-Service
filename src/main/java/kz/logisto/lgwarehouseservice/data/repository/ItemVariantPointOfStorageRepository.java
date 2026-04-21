@@ -3,10 +3,12 @@ package kz.logisto.lgwarehouseservice.data.repository;
 import kz.logisto.lgwarehouseservice.data.entity.ItemVariantPointOfStorage;
 import kz.logisto.lgwarehouseservice.data.entity.key.ItemVariantPointOfStorageId;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -15,6 +17,10 @@ public interface ItemVariantPointOfStorageRepository extends
 
   @Query("select ivpos from ItemVariantPointOfStorage ivpos where ivpos.id.itemVariantId = :itemVariantId")
   List<ItemVariantPointOfStorage> findByItemVariantId(UUID itemVariantId);
+
+  @Query("select ivpos from ItemVariantPointOfStorage ivpos where ivpos.id.itemVariantId in :itemVariantIds")
+  List<ItemVariantPointOfStorage> findByIdItemVariantIdIn(
+      @Param("itemVariantIds") Set<UUID> itemVariantIds);
 
   @Modifying
   @Query(value = """

@@ -1,4 +1,4 @@
-name: postgres
+name: middleware
 
 services:
   postgres:
@@ -6,9 +6,32 @@ services:
     image: postgres
     ports:
       - "5432:5432"
-    volumes:
-      - ./data/postgres/:/var/lib/postgresql/data/
+    # volumes:
+    #   - ./data/postgres/:/var/lib/postgresql/data/
     environment:
       POSTGRES_DB: mercurio
       POSTGRES_USER: mercurio
       POSTGRES_PASSWORD: mercurio
+
+  keycloak:
+    container_name: keycloak
+    image: quay.io/keycloak/keycloak
+    ports:
+      - "9090:8080"
+    #    volumes:
+    #      - ./cert.pem:/etc/x509/https/cert.pem
+    #      - ./key.pem:/etc/x509/https/key.pem
+    environment:
+      KC_DB: postgres
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB_URL: jdbc:postgresql://postgres:5432/mercurio
+      KC_DB_USERNAME: mercurio
+      KC_DB_PASSWORD: mercurio
+      KC_DB_SCHEMA: public
+    #      KC_HTTPS_CERTIFICATE_FILE: /etc/x509/https/cert.pem
+    #      KC_HTTPS_CERTIFICATE_KEY_FILE: /etc/x509/https/key.pem
+    command:
+      - start-dev
+    extra_hosts:
+      host.docker.internal: "host-gateway"

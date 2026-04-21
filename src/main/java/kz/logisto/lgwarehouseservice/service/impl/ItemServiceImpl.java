@@ -9,6 +9,7 @@ import kz.logisto.lgwarehouseservice.data.repository.ItemRepository;
 import kz.logisto.lgwarehouseservice.exception.NotFoundException;
 import kz.logisto.lgwarehouseservice.mapper.ItemMapper;
 import kz.logisto.lgwarehouseservice.service.AccessService;
+import kz.logisto.lgwarehouseservice.service.ItemSearchService;
 import kz.logisto.lgwarehouseservice.service.ItemService;
 import jakarta.persistence.criteria.Predicate;
 import java.security.Principal;
@@ -16,11 +17,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ItemServiceImpl implements ItemService {
@@ -28,6 +31,7 @@ public class ItemServiceImpl implements ItemService {
   private final ItemMapper itemMapper;
   private final AccessService accessService;
   private final ItemRepository itemRepository;
+  private final ItemSearchService itemSearchService;
 
   @Override
   public Page<ItemModel> findAll(UUID organizationId, ItemFilterDto filter, Pageable pageable,
@@ -49,7 +53,13 @@ public class ItemServiceImpl implements ItemService {
   public ItemModel create(CreateItemDto dto, Principal principal) {
     accessService.canManageWarehouseOrThrow(principal.getName(), dto.organizationId());
     Item item = itemMapper.toEntity(dto);
-    return itemMapper.toModel(itemRepository.save(item));
+    Item savedItem = itemRepository.save(item);
+    try {
+      itemSearchService.indexItem(savedItem);
+    } catch (Exception e) {
+      log.warn("Failed to index item {} in vector store: {}", savedItem.getId(), e.getMessage());
+    }
+    return itemMapper.toModel(savedItem);
   }
 
   @Override
@@ -58,13 +68,24 @@ public class ItemServiceImpl implements ItemService {
     accessService.canManageWarehouseOrThrow(principal.getName(), item.getOrganizationId());
 
     itemMapper.updateEntity(item, dto);
-    return itemMapper.toModel(itemRepository.save(item));
+    Item savedItem = itemRepository.save(item);
+    try {
+      itemSearchService.indexItem(savedItem);
+    } catch (Exception e) {
+      log.warn("Failed to index item {} in vector store: {}", savedItem.getId(), e.getMessage());
+    }
+    return itemMapper.toModel(savedItem);
   }
 
   @Override
   public void delete(UUID id, Principal principal) {
     Item item = getOrThrow(id);
     accessService.canManageWarehouseOrThrow(principal.getName(), item.getOrganizationId());
+    try {
+      itemSearchService.removeItem(item.getId());
+    } catch (Exception e) {
+      log.warn("Failed to remove item {} from vector store: {}", item.getId(), e.getMessage());
+    }
     itemRepository.delete(item);
   }
 

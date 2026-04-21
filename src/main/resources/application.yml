@@ -4,13 +4,6 @@ server:
     context-path: /warehouse-service
 
 spring:
-  ai:
-    openai:
-      api-key:
-      chat:
-        options:
-          model: gpt-4o
-          temperature: 0.3
   application:
     name: lg-warehouse-service
   datasource:
@@ -26,6 +19,23 @@ spring:
     password: ${spring.datasource.password}
     default-schema: ${spring.jpa.properties.hibernate.default_schema}
     locations: classpath:db/migration/
+  ai:
+    openai:
+      api-key:
+      chat:
+        options:
+          model: gpt-4o
+          temperature: 0.3
+      embedding:
+        options:
+          model: text-embedding-3-small
+    vectorstore:
+      pgvector:
+        dimensions: 1536
+        distance-type: cosine-distance
+        index-type: hnsw
+        initialize-schema: false
+        schema-name: mc_warehouse_service
 
 application:
   rest:

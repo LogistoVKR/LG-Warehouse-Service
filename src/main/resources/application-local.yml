@@ -18,7 +18,7 @@ spring:
         registration:
           keycloak:
             client-id: lg-backend
-            client-secret: TFgShCxIbClranUMiQ1eCdVUlE65BRxQ
+            client-secret: HtIZKBgCt4m1QRFyf5PKO8NZAb8EvrDC
             authorization-grant-type: client_credentials
 
 application:

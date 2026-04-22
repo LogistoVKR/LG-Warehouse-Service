@@ -1,0 +1,54 @@
+spring:
+  jpa:
+    properties:
+      hibernate:
+        default_schema: mc_warehouse_service
+    show-sql: true
+  flyway:
+    default-schema: mc_warehouse_service
+    locations: classpath:db/migration/
+  ai:
+    openai:
+      api-key: test-not-used
+      chat:
+        options:
+          model: gpt-4o
+      embedding:
+        options:
+          model: text-embedding-3-small
+    vectorstore:
+      pgvector:
+        dimensions: 1536
+        initialize-schema: false
+        schema-name: mc_warehouse_service
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.autoconfigure.openai.OpenAiAutoConfiguration
+      - org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:9090/realms/test
+      client:
+        registration:
+          keycloak:
+            client-id: test-client
+            client-secret: test-secret
+            authorization-grant-type: client_credentials
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:9090/realms/test
+
+application:
+  rest:
+    mc-user-service:
+      url: http://localhost:9999
+      connect-timeout: 500ms
+      read-timeout: 1s
+      context-path: /user-service
+
+server:
+  port: 0
+  servlet:
+    context-path: /warehouse-service

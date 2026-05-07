@@ -1,17 +1,20 @@
 package kz.logisto.lgwarehouseservice.service.impl;
 
-import kz.logisto.lgwarehouseservice.config.property.RestProperty;
-import kz.logisto.lgwarehouseservice.config.property.RestProperty.RestServiceProperty;
-import kz.logisto.lgwarehouseservice.service.UserService;
-import kz.logisto.lgwarehouseservice.util.RestClientUtil;
 import java.net.URI;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
+import kz.logisto.lgwarehouseservice.config.property.RestProperty;
+import kz.logisto.lgwarehouseservice.config.property.RestProperty.RestServiceProperty;
+import kz.logisto.lgwarehouseservice.data.model.OzonApiKeyModel;
+import kz.logisto.lgwarehouseservice.service.UserService;
+import kz.logisto.lgwarehouseservice.util.RestClientUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.security.oauth2.client.web.client.RequestAttributeClientRegistrationIdResolver;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -27,7 +30,7 @@ public class UserServiceImpl implements UserService {
   private final RestServiceProperty property;
 
   public UserServiceImpl(RestProperty restProperty,
-                         ClientHttpRequestInterceptor httpSecurityInterceptor) {
+      ClientHttpRequestInterceptor httpSecurityInterceptor) {
     this.restClient = RestClientUtil.build(restProperty.getMcUserService(),
         httpSecurityInterceptor);
     this.property = restProperty.getMcUserService();
@@ -74,5 +77,27 @@ public class UserServiceImpl implements UserService {
           userId, organizationId, exception.getStatusCode(), exception.getMessage());
     }
     return false;
+  }
+
+  @Override
+  public Optional<String> getOzonApiKeyByOrganizationId(UUID organizationId) {
+    URI uri = UriComponentsBuilder.newInstance()
+        .path(property.getContextPath() + "/organizations/{organizationId}/ozon-api-key")
+        .build(organizationId);
+
+    try {
+      OzonApiKeyModel model = restClient.get()
+          .uri(uri)
+          .attributes(CLIENT_ATTRIBUTES)
+          .retrieve()
+          .body(OzonApiKeyModel.class);
+      if (model != null && StringUtils.hasText(model.getOzonApiKey())) {
+        return Optional.of(model.getOzonApiKey());
+      }
+    } catch (HttpStatusCodeException exception) {
+      log.error("Cannot get ozon api key for organization {} -> status: {}; message: {}",
+          organizationId, exception.getStatusCode(), exception.getMessage());
+    }
+    return Optional.empty();
   }
 }

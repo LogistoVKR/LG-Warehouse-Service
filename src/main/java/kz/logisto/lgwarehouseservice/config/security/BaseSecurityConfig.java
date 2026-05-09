@@ -1,14 +1,19 @@
 package kz.logisto.lgwarehouseservice.config.security;
 
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
-import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.client.OAuth2ClientHttpRequestInterceptor;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -37,14 +42,27 @@ public class BaseSecurityConfig extends AbstractSecurityConfig {
   @Bean
   public OAuth2AuthorizedClientManager clientManager(
       ClientRegistrationRepository clientRegistrationRepository,
-      OAuth2AuthorizedClientRepository authorizedClientRepository) {
-    return new DefaultOAuth2AuthorizedClientManager(clientRegistrationRepository,
-        authorizedClientRepository);
+      OAuth2AuthorizedClientService authorizedClientService) {
+    AuthorizedClientServiceOAuth2AuthorizedClientManager manager =
+        new AuthorizedClientServiceOAuth2AuthorizedClientManager(
+            clientRegistrationRepository, authorizedClientService);
+    manager.setAuthorizedClientProvider(
+        OAuth2AuthorizedClientProviderBuilder.builder()
+            .clientCredentials()
+            .build());
+    return manager;
   }
 
   @Bean
   public ClientHttpRequestInterceptor httpSecurityInterceptor(
       OAuth2AuthorizedClientManager clientManager) {
-    return new OAuth2ClientHttpRequestInterceptor(clientManager);
+    OAuth2ClientHttpRequestInterceptor interceptor =
+        new OAuth2ClientHttpRequestInterceptor(clientManager);
+    interceptor.setPrincipalResolver(request -> {
+      Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+      return auth != null ? auth
+          : new UsernamePasswordAuthenticationToken("system", null, List.of());
+    });
+    return interceptor;
   }
 }

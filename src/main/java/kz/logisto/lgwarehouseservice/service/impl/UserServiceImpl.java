@@ -6,10 +6,14 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import kz.logisto.lgwarehouseservice.config.property.RestProperty;
 import kz.logisto.lgwarehouseservice.config.property.RestProperty.RestServiceProperty;
+import kz.logisto.lgwarehouseservice.data.dto.PageResponse;
+import kz.logisto.lgwarehouseservice.data.model.OrganizationModel;
 import kz.logisto.lgwarehouseservice.data.model.OzonApiKeyModel;
 import kz.logisto.lgwarehouseservice.service.UserService;
 import kz.logisto.lgwarehouseservice.util.RestClientUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.security.oauth2.client.web.client.RequestAttributeClientRegistrationIdResolver;
 import org.springframework.stereotype.Service;
@@ -94,5 +98,30 @@ public class UserServiceImpl implements UserService {
           organizationId, exception.getStatusCode(), exception.getMessage());
     }
     return null;
+  }
+
+  @Override
+  public PageResponse<OrganizationModel> getOrganizations(Pageable pageable) {
+    URI uri = UriComponentsBuilder.newInstance()
+        .path(property.getContextPath() + "/organizations/all")
+        .queryParam("hasOzonIntegration", true)
+        .queryParam("page", pageable.getPageNumber())
+        .queryParam("size", pageable.getPageSize())
+        .build()
+        .toUri();
+
+    try {
+      PageResponse<OrganizationModel> result = restClient.get()
+          .uri(uri)
+          .attributes(CLIENT_ATTRIBUTES)
+          .retrieve()
+          .body(new ParameterizedTypeReference<>() {
+          });
+      return result != null ? result : new PageResponse<>();
+    } catch (HttpStatusCodeException exception) {
+      log.error("Cannot get organizations -> status: {}; message: {}",
+          exception.getStatusCode(), exception.getMessage());
+    }
+    return new PageResponse<>();
   }
 }

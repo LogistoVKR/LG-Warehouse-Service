@@ -18,4 +18,7 @@ public interface ItemRepository extends JpaRepository<Item, UUID>, JpaSpecificat
   List<Item> findAllByOrganizationId(UUID organizationId);
 
   Optional<Item> findByOrganizationIdAndOzonModelId(UUID organizationId, Long ozonModelId);
+
+  List<Item> findAllByOrganizationIdAndOzonModelIdIsNotNull(UUID organizationId);
+
 }

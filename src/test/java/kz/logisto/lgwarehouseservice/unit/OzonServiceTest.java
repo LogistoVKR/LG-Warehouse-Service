@@ -8,10 +8,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import kz.logisto.lgwarehouseservice.config.property.RestProperty;
 import kz.logisto.lgwarehouseservice.data.model.OzonApiKeyModel;
 import kz.logisto.lgwarehouseservice.data.repository.ItemRepository;
 import kz.logisto.lgwarehouseservice.data.repository.ItemVariantRepository;
+import kz.logisto.lgwarehouseservice.mapper.ItemMapper;
+import kz.logisto.lgwarehouseservice.mapper.ItemVariantMapper;
 import kz.logisto.lgwarehouseservice.service.AccessService;
 import kz.logisto.lgwarehouseservice.service.OzonService;
 import kz.logisto.lgwarehouseservice.service.UserService;
@@ -24,6 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.RestClient;
 
 @ExtendWith(MockitoExtension.class)
 class OzonServiceTest {
@@ -41,14 +44,23 @@ class OzonServiceTest {
   private ItemVariantRepository itemVariantRepository;
 
   @Mock
-  private RestProperty restProperty;
+  private ItemMapper itemMapper;
+
+  @Mock
+  private ItemVariantMapper itemVariantMapper;
+
+  @Mock
+  private RestClient ozonRestClient;
+
+  @Mock
+  private TransactionTemplate transactionTemplate;
 
   private OzonService service;
 
   @BeforeEach
   void init() {
-    service = new OzonServiceImpl(userService, restProperty, accessService,
-        itemRepository, itemVariantRepository);
+    service = new OzonServiceImpl(itemMapper, userService, ozonRestClient, accessService,
+        itemRepository, itemVariantMapper, itemVariantRepository, transactionTemplate);
   }
 
   @Test

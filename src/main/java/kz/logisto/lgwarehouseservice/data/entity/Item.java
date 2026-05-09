@@ -1,6 +1,5 @@
 package kz.logisto.lgwarehouseservice.data.entity;
 
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -40,8 +39,6 @@ public class Item {
     return ozonModelId != null;
   }
 
-  @OneToMany(mappedBy = "item",
-      cascade = {CascadeType.MERGE, CascadeType.DETACH},
-      orphanRemoval = true)
+  @OneToMany(mappedBy = "item", orphanRemoval = true)
   private List<ItemVariant> variants;
 }

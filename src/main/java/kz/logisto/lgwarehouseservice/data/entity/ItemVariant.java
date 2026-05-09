@@ -37,6 +37,8 @@ public class ItemVariant {
 
   private String barcode;
 
+  private Long ozonProductId;
+
   @Fetch(FetchMode.JOIN)
   @ManyToOne(
       fetch = FetchType.EAGER,

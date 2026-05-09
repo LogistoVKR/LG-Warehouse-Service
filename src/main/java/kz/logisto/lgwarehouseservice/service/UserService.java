@@ -1,7 +1,7 @@
 package kz.logisto.lgwarehouseservice.service;
 
-import java.util.Optional;
 import java.util.UUID;
+import kz.logisto.lgwarehouseservice.data.model.OzonApiKeyModel;
 
 public interface UserService {
 
@@ -9,5 +9,5 @@ public interface UserService {
 
   boolean canManageWarehouse(String userId, UUID organizationId);
 
-  Optional<String> getOzonApiKeyByOrganizationId(UUID organizationId);
+  OzonApiKeyModel getOzonApiKeyByOrganizationId(UUID organizationId);
 }

@@ -43,6 +43,10 @@ application:
       connect-timeout: 500ms
       read-timeout: 1s
       context-path: /user-service
+    ozon-api:
+      url: https://api-seller.ozon.ru
+      connect-timeout: 5s
+      read-timeout: 30s
 
 logging:
   level:

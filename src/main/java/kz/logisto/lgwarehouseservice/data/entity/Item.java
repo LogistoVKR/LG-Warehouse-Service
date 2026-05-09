@@ -32,6 +32,10 @@ public class Item {
 
   private UUID organizationId;
 
-  @OneToMany(mappedBy = "item", cascade = { CascadeType.MERGE, CascadeType.DETACH })
+  private Long ozonModelId;
+
+  @OneToMany(mappedBy = "item",
+      cascade = {CascadeType.MERGE, CascadeType.DETACH},
+      orphanRemoval = true)
   private List<ItemVariant> variants;
 }

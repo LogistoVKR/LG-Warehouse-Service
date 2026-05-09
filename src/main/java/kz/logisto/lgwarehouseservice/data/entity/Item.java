@@ -7,6 +7,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.util.List;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
@@ -33,6 +34,11 @@ public class Item {
   private UUID organizationId;
 
   private Long ozonModelId;
+
+  @Transient
+  public boolean isOzonItem() {
+    return ozonModelId != null;
+  }
 
   @OneToMany(mappedBy = "item",
       cascade = {CascadeType.MERGE, CascadeType.DETACH},

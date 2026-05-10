@@ -18,14 +18,21 @@ import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonProductListRequest;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonProductListResponse;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonSubscriptionRequest;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonSubscriptionResponse;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonAvailableWarehousesResponse;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonWarehouseListRequest;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonWarehouseListResponse;
 import kz.logisto.lgwarehouseservice.data.entity.Item;
 import kz.logisto.lgwarehouseservice.data.entity.ItemVariant;
+import kz.logisto.lgwarehouseservice.data.entity.PointOfStorage;
+import kz.logisto.lgwarehouseservice.data.enums.PointOfStorageType;
 import kz.logisto.lgwarehouseservice.data.model.OrganizationModel;
 import kz.logisto.lgwarehouseservice.data.model.OzonApiKeyModel;
 import kz.logisto.lgwarehouseservice.data.model.OzonSubscriptionModel;
 import kz.logisto.lgwarehouseservice.data.model.OzonSubscriptionVariantModel;
+import kz.logisto.lgwarehouseservice.data.model.WarehouseAvailabilityModel;
 import kz.logisto.lgwarehouseservice.data.repository.ItemRepository;
 import kz.logisto.lgwarehouseservice.data.repository.ItemVariantRepository;
+import kz.logisto.lgwarehouseservice.data.repository.PointOfStorageRepository;
 import kz.logisto.lgwarehouseservice.mapper.ItemMapper;
 import kz.logisto.lgwarehouseservice.mapper.ItemVariantMapper;
 import kz.logisto.lgwarehouseservice.service.AccessService;
@@ -50,6 +57,8 @@ public class OzonServiceImpl implements OzonService {
   private static final String OZON_VISIBILITY_ALL = "ALL";
   private static final String HEADER_CLIENT_ID = "Client-Id";
   private static final String OZON_PRODUCT_LIST_URI = "/v3/product/list";
+  private static final String OZON_WAREHOUSE_LIST_URI = "/v2/warehouse/list";
+  private static final String OZON_AVAILABLE_WAREHOUSES_URI = "/v1/supplier/available_warehouses";
   private static final String OZON_PRODUCT_INFO_URI = "/v3/product/info/list";
   private static final String OZON_PRODUCT_DESCRIPTION_URI = "/v1/product/info/description";
   private static final String OZON_PRODUCT_SUBSCRIPTION_URI = "/v1/product/info/subscription";
@@ -61,6 +70,7 @@ public class OzonServiceImpl implements OzonService {
   private final ItemRepository itemRepository;
   private final ItemVariantMapper itemVariantMapper;
   private final ItemVariantRepository itemVariantRepository;
+  private final PointOfStorageRepository pointOfStorageRepository;
   private final TransactionTemplate transactionTemplate;
 
   @Override
@@ -141,6 +151,139 @@ public class OzonServiceImpl implements OzonService {
     }
 
     return result;
+  }
+
+  @Override
+  public void syncWarehouses(UUID organizationId, Principal principal) {
+    accessService.canManageWarehouseOrThrow(principal.getName(), organizationId);
+
+    OzonApiKeyModel apiKey = userService.getOzonApiKeyByOrganizationId(organizationId);
+    if (apiKey == null || !apiKey.isHasIntegration()) {
+      log.info("Ozon integration is not configured for organization {}", organizationId);
+      return;
+    }
+
+    doSyncWarehouses(organizationId, apiKey);
+  }
+
+  @Override
+  public void syncAllWarehouses() {
+    PageResponse<OrganizationModel> organizations;
+    PageRequest pageRequest = PageRequest.of(0, 10);
+    do {
+      organizations = userService.getOrganizations(pageRequest);
+
+      for (final OrganizationModel organization : organizations.getContent()) {
+        OzonApiKeyModel apiKeyModel = userService.getOzonApiKeyByOrganizationId(
+            organization.getId());
+        doSyncWarehouses(organization.getId(), apiKeyModel);
+      }
+
+      pageRequest = pageRequest.next();
+    } while (!organizations.isLast());
+  }
+
+  private void doSyncWarehouses(UUID organizationId, OzonApiKeyModel apiKey) {
+    if (apiKey == null || !apiKey.isHasIntegration()) {
+      return;
+    }
+
+    List<OzonWarehouseListResponse.WarehouseItem> warehouses = fetchWarehouses(
+        apiKey.getOzonClientId(), apiKey.getOzonApiKey());
+
+    if (warehouses.isEmpty()) {
+      log.info("No warehouses found in Ozon for organization {}", organizationId);
+      return;
+    }
+
+    for (OzonWarehouseListResponse.WarehouseItem warehouse : warehouses) {
+      try {
+        PointOfStorage entity = pointOfStorageRepository
+            .findByOrganizationIdAndOzonWarehouseId(organizationId, warehouse.getWarehouseId())
+            .orElse(new PointOfStorage());
+
+        entity.setOzonWarehouseId(warehouse.getWarehouseId());
+        entity.setOrganizationId(organizationId);
+        entity.setName(warehouse.getName());
+        entity.setType(PointOfStorageType.WAREHOUSE);
+
+        pointOfStorageRepository.save(entity);
+      } catch (Exception e) {
+        log.error("Failed to save warehouse_id={} for organization {}: {}",
+            warehouse.getWarehouseId(), organizationId, e.getMessage());
+      }
+    }
+
+    log.info("Ozon warehouse sync completed for organization {}: {} warehouses",
+        organizationId, warehouses.size());
+  }
+
+  private List<OzonWarehouseListResponse.WarehouseItem> fetchWarehouses(String clientId,
+      String apiKey) {
+    try {
+      OzonWarehouseListResponse response = ozonRestClient.post()
+          .uri(OZON_WAREHOUSE_LIST_URI)
+          .header(HEADER_CLIENT_ID, clientId)
+          .header(HEADER_API_KEY, apiKey)
+          .body(new OzonWarehouseListRequest(BATCH_SIZE))
+          .retrieve()
+          .body(OzonWarehouseListResponse.class);
+
+      if (response != null && response.getWarehouses() != null) {
+        return response.getWarehouses();
+      }
+    } catch (RestClientException e) {
+      log.error("Failed to fetch warehouse list from Ozon: {}", e.getMessage());
+    }
+    return List.of();
+  }
+
+  @Override
+  public List<WarehouseAvailabilityModel> getWarehouseAvailability(UUID organizationId,
+      Principal principal) {
+    accessService.canManageWarehouseOrThrow(principal.getName(), organizationId);
+
+    OzonApiKeyModel apiKey = userService.getOzonApiKeyByOrganizationId(organizationId);
+    if (apiKey == null || !apiKey.isHasIntegration()) {
+      log.info("Ozon integration is not configured for organization {}", organizationId);
+      return List.of();
+    }
+
+    List<OzonAvailableWarehousesResponse.WarehouseAvailabilityItem> items =
+        fetchAvailableWarehouses(apiKey.getOzonClientId(), apiKey.getOzonApiKey());
+
+    return items.stream()
+        .filter(item -> item.getWarehouse() != null && item.getSchedule() != null
+            && item.getSchedule().getCapacity() != null
+            && !item.getSchedule().getCapacity().isEmpty())
+        .map(item -> {
+          double avg = item.getSchedule().getCapacity().stream()
+              .mapToLong(OzonAvailableWarehousesResponse.CapacityEntry::getValue)
+              .average()
+              .orElse(0.0);
+          return new WarehouseAvailabilityModel(
+              item.getWarehouse().getId(), item.getWarehouse().getName(), avg);
+        })
+        .toList();
+  }
+
+  private List<OzonAvailableWarehousesResponse.WarehouseAvailabilityItem> fetchAvailableWarehouses(
+      String clientId, String apiKey) {
+    try {
+      OzonAvailableWarehousesResponse response = ozonRestClient.get()
+          .uri(OZON_AVAILABLE_WAREHOUSES_URI)
+          .header(HEADER_CLIENT_ID, clientId)
+          .header(HEADER_API_KEY, apiKey)
+          .retrieve()
+          .body(OzonAvailableWarehousesResponse.class);
+
+      if (response != null && response.getResult() != null) {
+        return response.getResult();
+      }
+    } catch (RestClientException e) {
+      log.error("Failed to fetch available warehouses from Ozon: {}", e.getMessage());
+    }
+    return List.of();
   }
 
   private void doSync(UUID organizationId, OzonApiKeyModel apiKey) {

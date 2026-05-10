@@ -18,4 +18,5 @@ public class PointOfStorageModel {
   private String description;
   private String location;
   private PointOfStorageType type;
+  private boolean isOzonPointOfStorage;
 }

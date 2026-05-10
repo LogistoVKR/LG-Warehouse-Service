@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -39,4 +40,11 @@ public class PointOfStorage {
   @Enumerated(EnumType.STRING)
   @JdbcType(PostgreSQLEnumJdbcType.class)
   private PointOfStorageType type;
+
+  private Long ozonWarehouseId;
+
+  @Transient
+  public boolean isOzonPointOfStorage() {
+    return ozonWarehouseId != null;
+  }
 }

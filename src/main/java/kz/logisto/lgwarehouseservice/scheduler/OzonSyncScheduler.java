@@ -17,5 +17,7 @@ public class OzonSyncScheduler {
   public void syncAll() {
     log.info("Started item sync");
     ozonService.syncAllProducts();
+    log.info("Started warehouse sync");
+    ozonService.syncAllWarehouses();
   }
 }

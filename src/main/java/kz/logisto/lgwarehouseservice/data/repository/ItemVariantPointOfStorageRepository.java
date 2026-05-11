@@ -22,6 +22,9 @@ public interface ItemVariantPointOfStorageRepository extends
   List<ItemVariantPointOfStorage> findByIdItemVariantIdIn(
       @Param("itemVariantIds") Set<UUID> itemVariantIds);
 
+  @Query("select ivpos from ItemVariantPointOfStorage ivpos where ivpos.id.pointOfStorageId = :pointOfStorageId")
+  List<ItemVariantPointOfStorage> findByIdPointOfStorageId(UUID pointOfStorageId);
+
   @Modifying
   @Query(value = """
       insert into mc_warehouse_service.item_variant_point_of_storage (item_variant_id, point_of_storage_id, quantity, reserved)

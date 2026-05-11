@@ -16,4 +16,6 @@ public interface ItemVariantRepository extends JpaRepository<ItemVariant, UUID> 
   int countByItem_OrganizationId(UUID organizationId);
 
   Optional<ItemVariant> findByOzonProductId(Long ozonProductId);
+
+  Optional<ItemVariant> findBySku(String sku);
 }

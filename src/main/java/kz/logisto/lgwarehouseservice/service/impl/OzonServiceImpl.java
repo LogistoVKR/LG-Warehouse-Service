@@ -2,28 +2,47 @@ package kz.logisto.lgwarehouseservice.service.impl;
 
 import java.math.BigDecimal;
 import java.security.Principal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Currency;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import kz.logisto.lgwarehouseservice.data.dto.PageResponse;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonAvailableWarehousesResponse;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonPostingFboListResponse;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonPostingFbsListResponse;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonPostingListRequest;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonProductDescriptionRequest;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonProductDescriptionResponse;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonProductInfoRequest;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonProductInfoResponse;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonProductListRequest;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonProductListResponse;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonReturnsListRequest;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonReturnsListResponse;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonStockOnWarehousesRequest;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonStockOnWarehousesResponse;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonStocksUpdateRequest;
+import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonStocksUpdateResponse;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonSubscriptionRequest;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonSubscriptionResponse;
-import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonAvailableWarehousesResponse;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonWarehouseListRequest;
 import kz.logisto.lgwarehouseservice.data.dto.ozon.OzonWarehouseListResponse;
 import kz.logisto.lgwarehouseservice.data.entity.Item;
 import kz.logisto.lgwarehouseservice.data.entity.ItemVariant;
+import kz.logisto.lgwarehouseservice.data.entity.ItemVariantMovement;
+import kz.logisto.lgwarehouseservice.data.entity.ItemVariantPointOfStorage;
 import kz.logisto.lgwarehouseservice.data.entity.PointOfStorage;
+import kz.logisto.lgwarehouseservice.data.entity.key.ItemVariantPointOfStorageId;
+import kz.logisto.lgwarehouseservice.data.enums.MovementType;
 import kz.logisto.lgwarehouseservice.data.enums.PointOfStorageType;
 import kz.logisto.lgwarehouseservice.data.model.OrganizationModel;
 import kz.logisto.lgwarehouseservice.data.model.OzonApiKeyModel;
@@ -31,6 +50,8 @@ import kz.logisto.lgwarehouseservice.data.model.OzonSubscriptionModel;
 import kz.logisto.lgwarehouseservice.data.model.OzonSubscriptionVariantModel;
 import kz.logisto.lgwarehouseservice.data.model.WarehouseAvailabilityModel;
 import kz.logisto.lgwarehouseservice.data.repository.ItemRepository;
+import kz.logisto.lgwarehouseservice.data.repository.ItemVariantMovementRepository;
+import kz.logisto.lgwarehouseservice.data.repository.ItemVariantPointOfStorageRepository;
 import kz.logisto.lgwarehouseservice.data.repository.ItemVariantRepository;
 import kz.logisto.lgwarehouseservice.data.repository.PointOfStorageRepository;
 import kz.logisto.lgwarehouseservice.mapper.ItemMapper;
@@ -52,6 +73,7 @@ import org.springframework.web.client.RestClientException;
 public class OzonServiceImpl implements OzonService {
 
   private static final int BATCH_SIZE = 100;
+  private static final int POSTING_PAGE_SIZE = 50;
   private static final int DESCRIPTION_MAX_LENGTH = 255;
   private static final String HEADER_API_KEY = "Api-Key";
   private static final String OZON_VISIBILITY_ALL = "ALL";
@@ -62,6 +84,18 @@ public class OzonServiceImpl implements OzonService {
   private static final String OZON_PRODUCT_INFO_URI = "/v3/product/info/list";
   private static final String OZON_PRODUCT_DESCRIPTION_URI = "/v1/product/info/description";
   private static final String OZON_PRODUCT_SUBSCRIPTION_URI = "/v1/product/info/subscription";
+  private static final String OZON_STOCKS_UPDATE_URI = "/v2/products/stocks";
+  private static final String OZON_POSTING_FBO_LIST_URI = "/v2/posting/fbo/list";
+  private static final String OZON_POSTING_FBS_LIST_URI = "/v3/posting/fbs/list";
+  private static final String OZON_RETURNS_LIST_URI = "/v1/returns/list";
+  private static final String OZON_STOCK_ON_WAREHOUSES_URI = "/v2/analytics/stock_on_warehouses";
+
+  private static final long ROLLING_WINDOW_MINUTES = 30;
+  private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ofPattern(
+      "yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(ZoneOffset.UTC);
+
+  private final Map<UUID, Instant> lastPostingSync = new ConcurrentHashMap<>();
+  private final Map<UUID, Instant> lastReturnsSync = new ConcurrentHashMap<>();
 
   private final ItemMapper itemMapper;
   private final UserService userService;
@@ -71,6 +105,8 @@ public class OzonServiceImpl implements OzonService {
   private final ItemVariantMapper itemVariantMapper;
   private final ItemVariantRepository itemVariantRepository;
   private final PointOfStorageRepository pointOfStorageRepository;
+  private final ItemVariantMovementRepository movementRepository;
+  private final ItemVariantPointOfStorageRepository stockRepository;
   private final TransactionTemplate transactionTemplate;
 
   @Override
@@ -183,6 +219,659 @@ public class OzonServiceImpl implements OzonService {
     } while (!organizations.isLast());
   }
 
+  @Override
+  public void pushVariantStockToOzon(UUID organizationId, UUID itemVariantId,
+      UUID pointOfStorageId) {
+    try {
+      OzonApiKeyModel apiKey = userService.getOzonApiKeyByOrganizationId(organizationId);
+      if (apiKey == null || !apiKey.isHasIntegration()) {
+        return;
+      }
+
+      ItemVariant variant = itemVariantRepository.findById(itemVariantId).orElse(null);
+      if (variant == null || variant.getOzonProductId() == null) {
+        return;
+      }
+
+      PointOfStorage warehouse = pointOfStorageRepository.findById(pointOfStorageId).orElse(null);
+      if (warehouse == null || warehouse.getOzonWarehouseId() == null) {
+        return;
+      }
+
+      ItemVariantPointOfStorageId key = new ItemVariantPointOfStorageId(
+          itemVariantId, pointOfStorageId);
+      ItemVariantPointOfStorage stock = stockRepository.findById(key).orElse(null);
+      int quantity = stock != null ? Math.max(0, stock.getQuantity()) : 0;
+
+      pushStocksBatch(
+          apiKey.getOzonClientId(), apiKey.getOzonApiKey(),
+          List.of(new OzonStocksUpdateRequest.StockItem(
+              variant.getOzonProductId(), quantity, warehouse.getOzonWarehouseId())),
+          organizationId);
+
+    } catch (Exception e) {
+      log.error("Failed to push stock to Ozon: variant={}, warehouse={}, org={}: {}",
+          itemVariantId, pointOfStorageId, organizationId, e.getMessage());
+    }
+  }
+
+  @Override
+  public void syncStocksToOzon(UUID organizationId, Principal principal) {
+    accessService.canManageWarehouseOrThrow(principal.getName(), organizationId);
+
+    OzonApiKeyModel apiKey = userService.getOzonApiKeyByOrganizationId(organizationId);
+    if (apiKey == null || !apiKey.isHasIntegration()) {
+      log.info("Ozon integration is not configured for organization {}", organizationId);
+      return;
+    }
+
+    doSyncStocksToOzon(organizationId, apiKey);
+  }
+
+  @Override
+  public void syncAllStocksToOzon() {
+    PageResponse<OrganizationModel> organizations;
+    PageRequest pageRequest = PageRequest.of(0, 10);
+    do {
+      organizations = userService.getOrganizations(pageRequest);
+
+      for (final OrganizationModel organization : organizations.getContent()) {
+        OzonApiKeyModel apiKeyModel = userService.getOzonApiKeyByOrganizationId(
+            organization.getId());
+        if (apiKeyModel != null && apiKeyModel.isHasIntegration()) {
+          doSyncStocksToOzon(organization.getId(), apiKeyModel);
+        }
+      }
+
+      pageRequest = pageRequest.next();
+    } while (!organizations.isLast());
+  }
+
+  private void doSyncStocksToOzon(UUID organizationId, OzonApiKeyModel apiKey) {
+    List<PointOfStorage> ozonWarehouses = pointOfStorageRepository
+        .findAllByOrganizationIdAndOzonWarehouseIdIsNotNull(organizationId);
+
+    if (ozonWarehouses.isEmpty()) {
+      log.info("No Ozon-linked warehouses for organization {}", organizationId);
+      return;
+    }
+
+    List<OzonStocksUpdateRequest.StockItem> stockItems = new ArrayList<>();
+
+    for (final PointOfStorage warehouse : ozonWarehouses) {
+      List<ItemVariantPointOfStorage> stocks = stockRepository
+          .findByIdPointOfStorageId(warehouse.getId());
+
+      for (ItemVariantPointOfStorage stock : stocks) {
+        ItemVariant variant = itemVariantRepository
+            .findById(stock.getId().getItemVariantId())
+            .orElse(null);
+
+        if (variant == null || variant.getOzonProductId() == null) {
+          continue;
+        }
+
+        if (stock.getQuantity() <= 0) {
+          continue;
+        }
+
+        stockItems.add(new OzonStocksUpdateRequest.StockItem(
+            variant.getOzonProductId(),
+            stock.getQuantity(),
+            warehouse.getOzonWarehouseId()
+        ));
+      }
+    }
+
+    if (stockItems.isEmpty()) {
+      return;
+    }
+
+    for (int i = 0; i < stockItems.size(); i += BATCH_SIZE) {
+      List<OzonStocksUpdateRequest.StockItem> batch = stockItems.subList(
+          i, Math.min(i + BATCH_SIZE, stockItems.size()));
+      pushStocksBatch(apiKey.getOzonClientId(), apiKey.getOzonApiKey(), batch, organizationId);
+    }
+
+    log.info("Stock push completed for organization {}: {} items", organizationId,
+        stockItems.size());
+  }
+
+  private void pushStocksBatch(String clientId, String apiKey,
+      List<OzonStocksUpdateRequest.StockItem> batch, UUID organizationId) {
+    try {
+      OzonStocksUpdateResponse response = ozonRestClient.post()
+          .uri(OZON_STOCKS_UPDATE_URI)
+          .header(HEADER_CLIENT_ID, clientId)
+          .header(HEADER_API_KEY, apiKey)
+          .body(new OzonStocksUpdateRequest(batch))
+          .retrieve()
+          .body(OzonStocksUpdateResponse.class);
+
+      if (response != null && response.getResult() != null) {
+        response.getResult().stream()
+            .filter(r -> !r.isUpdated())
+            .forEach(r -> log.warn(
+                "Ozon stock not updated for product_id={}, org={}, errors={}",
+                r.getProductId(), organizationId,
+                r.getErrors() == null ? "[]" : r.getErrors().stream()
+                    .map(e -> e.getCode() + ": " + e.getMessage())
+                    .toList()));
+      }
+    } catch (RestClientException e) {
+      log.error("Failed to push stocks to Ozon for org {}: {}", organizationId, e.getMessage());
+    }
+  }
+
+  @Override
+  public void pullAllPostings() {
+    PageResponse<OrganizationModel> organizations;
+    PageRequest pageRequest = PageRequest.of(0, 10);
+    do {
+      organizations = userService.getOrganizations(pageRequest);
+
+      for (final OrganizationModel organization : organizations.getContent()) {
+        OzonApiKeyModel apiKeyModel = userService.getOzonApiKeyByOrganizationId(
+            organization.getId());
+        if (apiKeyModel != null && apiKeyModel.isHasIntegration()) {
+          doPullFboPostings(organization.getId(), apiKeyModel);
+          doPullFbsPostings(organization.getId(), apiKeyModel);
+        }
+      }
+
+      pageRequest = pageRequest.next();
+    } while (!organizations.isLast());
+  }
+
+  private void doPullFboPostings(UUID organizationId, OzonApiKeyModel apiKey) {
+    Instant from = lastPostingSync.getOrDefault(organizationId,
+        Instant.now().minusSeconds(ROLLING_WINDOW_MINUTES * 60));
+    Instant to = Instant.now();
+
+    List<OzonPostingFboListResponse.Posting> postings;
+    int offset = 0;
+    do {
+      postings = fetchFboPostings(apiKey.getOzonClientId(), apiKey.getOzonApiKey(),
+          buildPostingRequest(from, to, POSTING_PAGE_SIZE, offset));
+      for (OzonPostingFboListResponse.Posting posting : postings) {
+        try {
+          handleFboPosting(organizationId, posting);
+        } catch (Exception e) {
+          log.error("Failed to handle FBO posting {} for org {}: {}",
+              posting.getPostingNumber(), organizationId, e.getMessage());
+        }
+      }
+      offset += POSTING_PAGE_SIZE;
+    } while (postings.size() == POSTING_PAGE_SIZE);
+
+    lastPostingSync.put(organizationId, to);
+    log.info("FBO posting pull completed for organization {}", organizationId);
+  }
+
+  private void handleFboPosting(UUID organizationId, OzonPostingFboListResponse.Posting posting) {
+    if (!"delivered".equals(posting.getStatus())) {
+      return;
+    }
+    String reason = "ozon_fbo_delivered_" + posting.getPostingNumber();
+    if (movementRepository.existsByReason(reason)) {
+      return;
+    }
+    Long warehouseId = posting.getAnalyticsData() != null
+        ? posting.getAnalyticsData().getWarehouseId() : null;
+    PointOfStorage warehouse = resolveWarehouse(organizationId, warehouseId);
+    if (warehouse == null) {
+      log.warn("No warehouse found for FBO posting {}, warehouseId={}",
+          posting.getPostingNumber(), warehouseId);
+      return;
+    }
+    createSaleMovements(organizationId, posting.getProducts().stream()
+        .map(p -> new PostingProduct(p.getSku(), p.getQuantity(), null, null))
+        .toList(), warehouse, reason);
+  }
+
+  private void doPullFbsPostings(UUID organizationId, OzonApiKeyModel apiKey) {
+    Instant from = lastPostingSync.getOrDefault(organizationId,
+        Instant.now().minusSeconds(ROLLING_WINDOW_MINUTES * 60));
+    Instant to = Instant.now();
+
+    List<OzonPostingFbsListResponse.Posting> postings;
+    int offset = 0;
+    do {
+      postings = fetchFbsPostings(apiKey.getOzonClientId(), apiKey.getOzonApiKey(),
+          buildPostingRequest(from, to, POSTING_PAGE_SIZE, offset));
+      for (OzonPostingFbsListResponse.Posting posting : postings) {
+        try {
+          handleFbsPosting(organizationId, posting);
+        } catch (Exception e) {
+          log.error("Failed to handle FBS posting {} for org {}: {}",
+              posting.getPostingNumber(), organizationId, e.getMessage());
+        }
+      }
+      offset += POSTING_PAGE_SIZE;
+    } while (postings.size() == POSTING_PAGE_SIZE);
+
+    log.info("FBS posting pull completed for organization {}", organizationId);
+  }
+
+  private void handleFbsPosting(UUID organizationId, OzonPostingFbsListResponse.Posting posting) {
+    String status = posting.getStatus();
+    String postingNumber = posting.getPostingNumber();
+
+    PointOfStorage warehouse = resolveWarehouse(organizationId, posting.getWarehouseId());
+
+    if ("awaiting_packaging".equals(status)) {
+      String reason = "ozon_fbs_reserve_" + postingNumber;
+      if (movementRepository.existsByReason(reason) || warehouse == null) {
+        return;
+      }
+      createReserveMovements(organizationId, posting.getProducts().stream()
+          .map(p -> new PostingProduct(p.getSku(), p.getQuantity(), p.getPrice(),
+              p.getCurrencyCode()))
+          .toList(), warehouse, reason);
+
+    } else if ("delivered".equals(status)) {
+      String saleReason = "ozon_fbs_delivered_" + postingNumber;
+      if (!movementRepository.existsByReason(saleReason) && warehouse != null) {
+        String reserveReason = "ozon_fbs_reserve_" + postingNumber;
+        if (movementRepository.existsByReason(reserveReason)) {
+          releaseReserve(organizationId, posting.getProducts().stream()
+              .map(p -> new PostingProduct(p.getSku(), p.getQuantity(), null, null))
+              .toList(), warehouse, "ozon_fbs_reserve_released_" + postingNumber);
+        }
+        createSaleMovements(organizationId, posting.getProducts().stream()
+            .map(p -> new PostingProduct(p.getSku(), p.getQuantity(), p.getPrice(),
+                p.getCurrencyCode()))
+            .toList(), warehouse, saleReason);
+      }
+
+    } else if ("cancelled".equals(status)) {
+      String reserveReason = "ozon_fbs_reserve_" + postingNumber;
+      String cancelReason = "ozon_fbs_cancelled_" + postingNumber;
+      if (movementRepository.existsByReason(reserveReason)
+          && !movementRepository.existsByReason(cancelReason)
+          && warehouse != null) {
+        releaseReserve(organizationId, posting.getProducts().stream()
+            .map(p -> new PostingProduct(p.getSku(), p.getQuantity(), null, null))
+            .toList(), warehouse, cancelReason);
+      }
+    }
+  }
+
+  @Override
+  public void pullAllReturns() {
+    PageResponse<OrganizationModel> organizations;
+    PageRequest pageRequest = PageRequest.of(0, 10);
+    do {
+      organizations = userService.getOrganizations(pageRequest);
+
+      for (final OrganizationModel organization : organizations.getContent()) {
+        OzonApiKeyModel apiKeyModel = userService.getOzonApiKeyByOrganizationId(
+            organization.getId());
+        if (apiKeyModel != null && apiKeyModel.isHasIntegration()) {
+          doPullReturns(organization.getId(), apiKeyModel);
+        }
+      }
+
+      pageRequest = pageRequest.next();
+    } while (!organizations.isLast());
+  }
+
+  private void doPullReturns(UUID organizationId, OzonApiKeyModel apiKey) {
+    Instant from = lastReturnsSync.getOrDefault(organizationId,
+        Instant.now().minusSeconds(ROLLING_WINDOW_MINUTES * 60));
+    Instant to = Instant.now();
+    String fromStr = ISO_FORMATTER.format(from);
+    String toStr = ISO_FORMATTER.format(to);
+
+    long lastId = 0;
+    OzonReturnsListResponse response;
+    do {
+      response = fetchReturnsListResponse(
+          apiKey.getOzonClientId(), apiKey.getOzonApiKey(),
+          new OzonReturnsListRequest(
+              new OzonReturnsListRequest.Filter(
+                  new OzonReturnsListRequest.TimeRange(fromStr, toStr)),
+              BATCH_SIZE, lastId));
+
+      if (response == null || response.getReturns() == null) {
+        break;
+      }
+
+      for (OzonReturnsListResponse.Return ret : response.getReturns()) {
+        try {
+          handleReturn(organizationId, ret);
+        } catch (Exception e) {
+          log.error("Failed to handle return id={} for org {}: {}",
+              ret.getId(), organizationId, e.getMessage());
+        }
+        lastId = Math.max(lastId, ret.getId());
+      }
+    } while (response.isHasNext());
+
+    lastReturnsSync.put(organizationId, to);
+    log.info("Returns pull completed for organization {}", organizationId);
+  }
+
+  private void handleReturn(UUID organizationId, OzonReturnsListResponse.Return ret) {
+    if (ret.getProduct() == null || ret.getProduct().getSku() == null) {
+      return;
+    }
+
+    String reason = "ozon_return_" + ret.getId();
+    if (movementRepository.existsByReason(reason)) {
+      return;
+    }
+
+    Long warehouseId = ret.getPlace() != null ? ret.getPlace().getId() : null;
+    PointOfStorage warehouse = resolveWarehouse(organizationId, warehouseId);
+    if (warehouse == null) {
+      List<PointOfStorage> ozonWarehouses = pointOfStorageRepository
+          .findAllByOrganizationIdAndOzonWarehouseIdIsNotNull(organizationId);
+      if (ozonWarehouses.isEmpty()) {
+        log.warn("No warehouse found for return id={}, org={}", ret.getId(), organizationId);
+        return;
+      }
+      warehouse = ozonWarehouses.getFirst();
+    }
+
+    final PointOfStorage finalWarehouse = warehouse;
+    transactionTemplate.executeWithoutResult(tx -> {
+      ItemVariant variant = itemVariantRepository
+          .findBySku(String.valueOf(ret.getProduct().getSku()))
+          .orElse(null);
+      if (variant == null) {
+        return;
+      }
+      stockRepository.increment(variant.getId(), finalWarehouse.getId(),
+          ret.getProduct().getQuantity());
+      saveMovement(organizationId, null, finalWarehouse, variant,
+          ret.getProduct().getQuantity(), MovementType.RETURN, reason, null, null);
+    });
+  }
+
+  @Override
+  public void reconcileAllStocks() {
+    PageResponse<OrganizationModel> organizations;
+    PageRequest pageRequest = PageRequest.of(0, 10);
+    do {
+      organizations = userService.getOrganizations(pageRequest);
+
+      for (final OrganizationModel organization : organizations.getContent()) {
+        OzonApiKeyModel apiKeyModel = userService.getOzonApiKeyByOrganizationId(
+            organization.getId());
+        if (apiKeyModel != null && apiKeyModel.isHasIntegration()) {
+          doReconcileStocks(organization.getId(), apiKeyModel);
+        }
+      }
+
+      pageRequest = pageRequest.next();
+    } while (!organizations.isLast());
+  }
+
+  private void doReconcileStocks(UUID organizationId, OzonApiKeyModel apiKey) {
+    String today = LocalDate.now(ZoneOffset.UTC).toString();
+
+    List<OzonStockOnWarehousesResponse.Row> rows;
+    int offset = 0;
+    do {
+      rows = fetchStockOnWarehouses(apiKey.getOzonClientId(), apiKey.getOzonApiKey(),
+          new OzonStockOnWarehousesRequest(BATCH_SIZE, offset, "ALL"));
+      for (final OzonStockOnWarehousesResponse.Row row : rows) {
+        try {
+          reconcileRow(organizationId, row, today);
+        } catch (Exception e) {
+          log.error("Reconciliation failed for sku={}, warehouseId={}, org={}: {}",
+              row.getSku(), row.getWarehouseId(), organizationId, e.getMessage());
+        }
+      }
+      offset += BATCH_SIZE;
+    } while (rows.size() == BATCH_SIZE);
+
+    log.info("Reconciliation completed for organization {}", organizationId);
+  }
+
+  private void reconcileRow(UUID organizationId, OzonStockOnWarehousesResponse.Row row,
+      String today) {
+    ItemVariant variant = itemVariantRepository
+        .findBySku(String.valueOf(row.getSku()))
+        .orElse(null);
+    if (variant == null) {
+      return;
+    }
+
+    PointOfStorage warehouse = resolveWarehouse(organizationId, row.getWarehouseId());
+    if (warehouse == null) {
+      return;
+    }
+
+    ItemVariantPointOfStorageId compositeKey = new ItemVariantPointOfStorageId(
+        variant.getId(), warehouse.getId());
+    Optional<ItemVariantPointOfStorage> stockOpt = stockRepository.findById(compositeKey);
+    int systemQuantity = stockOpt.map(ItemVariantPointOfStorage::getQuantity).orElse(0);
+
+    int delta = row.getFreeToSellAmount() - systemQuantity;
+    if (delta == 0) {
+      return;
+    }
+
+    String reason =
+        "ozon_reconciliation_" + row.getSku() + "_" + row.getWarehouseId() + "_" + today;
+    if (movementRepository.existsByReason(reason)) {
+      return;
+    }
+
+    transactionTemplate.executeWithoutResult(tx -> {
+      if (delta > 0) {
+        stockRepository.increment(variant.getId(), warehouse.getId(), delta);
+        saveMovement(organizationId, null, warehouse, variant,
+            delta, MovementType.PURCHASE, reason, null, null);
+      } else {
+        stockRepository.decrement(variant.getId(), warehouse.getId(), -delta);
+        saveMovement(organizationId, warehouse, null, variant,
+            -delta, MovementType.WRITE_OFF, reason, null, null);
+      }
+    });
+
+    log.info("Reconciliation adjusted sku={} at warehouse={}: delta={}", row.getSku(),
+        row.getWarehouseId(), delta);
+  }
+
+  private void createSaleMovements(UUID organizationId, List<PostingProduct> products,
+      PointOfStorage warehouse, String reason) {
+    transactionTemplate.executeWithoutResult(tx -> {
+      for (PostingProduct product : products) {
+        ItemVariant variant = itemVariantRepository
+            .findBySku(String.valueOf(product.sku()))
+            .orElse(null);
+        if (variant == null) {
+          continue;
+        }
+        ItemVariantPointOfStorageId key = new ItemVariantPointOfStorageId(
+            variant.getId(), warehouse.getId());
+        ItemVariantPointOfStorage stock = stockRepository.findById(key).orElse(null);
+        if (stock == null || stock.getQuantity() <= 0) {
+          log.warn("Skipping SALE for variant={} at warehouse={}: stock not initialized or 0",
+              variant.getId(), warehouse.getId());
+          continue;
+        }
+        stockRepository.decrement(variant.getId(), warehouse.getId(), product.quantity());
+        BigDecimal price = product.price();
+        Currency currency = parseCurrency(product.currencyCode());
+        saveMovement(organizationId, warehouse, null, variant,
+            product.quantity(), MovementType.SALE, reason, price, currency);
+      }
+    });
+  }
+
+  private void createReserveMovements(UUID organizationId, List<PostingProduct> products,
+      PointOfStorage warehouse, String reason) {
+    transactionTemplate.executeWithoutResult(tx -> {
+      for (PostingProduct product : products) {
+        ItemVariant variant = itemVariantRepository
+            .findBySku(String.valueOf(product.sku()))
+            .orElse(null);
+        if (variant == null) {
+          continue;
+        }
+        ItemVariantPointOfStorageId key = new ItemVariantPointOfStorageId(
+            variant.getId(), warehouse.getId());
+        ItemVariantPointOfStorage stock = stockRepository.findById(key).orElse(null);
+        if (stock == null || stock.getQuantity() <= 0) {
+          log.warn("Skipping RESERVE for variant={} at warehouse={}: stock not initialized or 0",
+              variant.getId(), warehouse.getId());
+          continue;
+        }
+        stockRepository.reserve(variant.getId(), warehouse.getId(), product.quantity());
+        BigDecimal price = product.price();
+        Currency currency = parseCurrency(product.currencyCode());
+        saveMovement(organizationId, warehouse, null, variant,
+            product.quantity(), MovementType.RESERVE, reason, price, currency);
+      }
+    });
+  }
+
+  private void releaseReserve(UUID organizationId, List<PostingProduct> products,
+      PointOfStorage warehouse, String reason) {
+    transactionTemplate.executeWithoutResult(tx -> {
+      for (PostingProduct product : products) {
+        ItemVariant variant = itemVariantRepository
+            .findBySku(String.valueOf(product.sku()))
+            .orElse(null);
+        if (variant == null) {
+          continue;
+        }
+        stockRepository.release(variant.getId(), warehouse.getId(), product.quantity());
+        saveMovement(organizationId, null, warehouse, variant,
+            product.quantity(), MovementType.PURCHASE, reason, null, null);
+      }
+    });
+  }
+
+  private void saveMovement(UUID organizationId, PointOfStorage from, PointOfStorage to,
+      ItemVariant variant, int quantity, MovementType type, String reason,
+      BigDecimal price, Currency currency) {
+    ItemVariantMovement movement = new ItemVariantMovement();
+    movement.setOrganizationId(organizationId);
+    movement.setFromPointOfStorage(from);
+    movement.setToPointOfStorage(to);
+    movement.setItemVariant(variant);
+    movement.setQuantity(quantity);
+    movement.setType(type);
+    movement.setReason(reason);
+    movement.setPricePerItem(price);
+    movement.setCurrency(currency);
+    movement.setCreated(java.time.LocalDateTime.now(ZoneOffset.UTC));
+    movementRepository.save(movement);
+  }
+
+  private PointOfStorage resolveWarehouse(UUID organizationId, Long ozonWarehouseId) {
+    if (ozonWarehouseId == null) {
+      return null;
+    }
+    return pointOfStorageRepository
+        .findByOrganizationIdAndOzonWarehouseId(organizationId, ozonWarehouseId)
+        .orElse(null);
+  }
+
+  private Currency parseCurrency(String code) {
+    if (code == null || code.isBlank()) {
+      return null;
+    }
+    try {
+      return Currency.getInstance(code);
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+  }
+
+  private OzonPostingListRequest buildPostingRequest(Instant from, Instant to, int limit,
+      int offset) {
+    return new OzonPostingListRequest(
+        new OzonPostingListRequest.Filter(ISO_FORMATTER.format(from), ISO_FORMATTER.format(to)),
+        limit,
+        offset,
+        new OzonPostingListRequest.With(true)
+    );
+  }
+
+  private List<OzonPostingFboListResponse.Posting> fetchFboPostings(String clientId, String apiKey,
+      OzonPostingListRequest request) {
+    try {
+      OzonPostingFboListResponse response = ozonRestClient.post()
+          .uri(OZON_POSTING_FBO_LIST_URI)
+          .header(HEADER_CLIENT_ID, clientId)
+          .header(HEADER_API_KEY, apiKey)
+          .body(request)
+          .retrieve()
+          .body(OzonPostingFboListResponse.class);
+
+      if (response != null && response.getResult() != null) {
+        return response.getResult();
+      }
+    } catch (RestClientException e) {
+      log.error("Failed to fetch FBO postings from Ozon: {}", e.getMessage());
+    }
+    return List.of();
+  }
+
+  private List<OzonPostingFbsListResponse.Posting> fetchFbsPostings(String clientId, String apiKey,
+      OzonPostingListRequest request) {
+    try {
+      OzonPostingFbsListResponse response = ozonRestClient.post()
+          .uri(OZON_POSTING_FBS_LIST_URI)
+          .header(HEADER_CLIENT_ID, clientId)
+          .header(HEADER_API_KEY, apiKey)
+          .body(request)
+          .retrieve()
+          .body(OzonPostingFbsListResponse.class);
+
+      if (response != null && response.getResult() != null
+          && response.getResult().getPostings() != null) {
+        return response.getResult().getPostings();
+      }
+    } catch (RestClientException e) {
+      log.error("Failed to fetch FBS postings from Ozon: {}", e.getMessage());
+    }
+    return List.of();
+  }
+
+  private OzonReturnsListResponse fetchReturnsListResponse(String clientId, String apiKey,
+      OzonReturnsListRequest request) {
+    try {
+      return ozonRestClient.post()
+          .uri(OZON_RETURNS_LIST_URI)
+          .header(HEADER_CLIENT_ID, clientId)
+          .header(HEADER_API_KEY, apiKey)
+          .body(request)
+          .retrieve()
+          .body(OzonReturnsListResponse.class);
+    } catch (RestClientException e) {
+      log.error("Failed to fetch returns list from Ozon: {}", e.getMessage());
+    }
+    return null;
+  }
+
+  private List<OzonStockOnWarehousesResponse.Row> fetchStockOnWarehouses(String clientId,
+      String apiKey, OzonStockOnWarehousesRequest request) {
+    try {
+      OzonStockOnWarehousesResponse response = ozonRestClient.post()
+          .uri(OZON_STOCK_ON_WAREHOUSES_URI)
+          .header(HEADER_CLIENT_ID, clientId)
+          .header(HEADER_API_KEY, apiKey)
+          .body(request)
+          .retrieve()
+          .body(OzonStockOnWarehousesResponse.class);
+
+      if (response != null && response.getResult() != null
+          && response.getResult().getRows() != null) {
+        return response.getResult().getRows();
+      }
+    } catch (RestClientException e) {
+      log.error("Failed to fetch stock on warehouses from Ozon: {}", e.getMessage());
+    }
+    return List.of();
+  }
+
   private void doSyncWarehouses(UUID organizationId, OzonApiKeyModel apiKey) {
     if (apiKey == null || !apiKey.isHasIntegration()) {
       return;
@@ -287,6 +976,10 @@ public class OzonServiceImpl implements OzonService {
   }
 
   private void doSync(UUID organizationId, OzonApiKeyModel apiKey) {
+    if (apiKey == null || !apiKey.isHasIntegration()) {
+      return;
+    }
+
     String clientId = apiKey.getOzonClientId();
     String apiKeyStr = apiKey.getOzonApiKey();
 
@@ -352,7 +1045,7 @@ public class OzonServiceImpl implements OzonService {
             e.getMessage());
         break;
       }
-    } while (true);
+    } while (!lastId.isBlank());
 
     return allIds;
   }
@@ -480,4 +1173,6 @@ public class OzonServiceImpl implements OzonService {
     }
     return value.length() > maxLength ? value.substring(0, maxLength) : value;
   }
+
+  private record PostingProduct(Long sku, int quantity, BigDecimal price, String currencyCode) {}
 }

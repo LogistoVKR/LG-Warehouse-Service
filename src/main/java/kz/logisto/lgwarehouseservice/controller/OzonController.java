@@ -35,6 +35,24 @@ public class OzonController {
     return ResponseEntity.noContent().build();
   }
 
+  @PostMapping("/sync/stocks")
+  public ResponseEntity<Void> syncStocks(@RequestParam UUID organizationId, Principal principal) {
+    ozonService.syncStocksToOzon(organizationId, principal);
+    return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/pull/postings")
+  public ResponseEntity<Void> pullPostings() {
+    ozonService.pullAllPostings();
+    return ResponseEntity.noContent().build();
+  }
+
+  @PostMapping("/reconcile")
+  public ResponseEntity<Void> reconcile() {
+    ozonService.reconcileAllStocks();
+    return ResponseEntity.noContent().build();
+  }
+
   @GetMapping("/warehouses/availability")
   public ResponseEntity<List<WarehouseAvailabilityModel>> getWarehouseAvailability(
       @RequestParam UUID organizationId, Principal principal) {

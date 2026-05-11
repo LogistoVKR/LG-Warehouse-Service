@@ -16,8 +16,19 @@ public interface OzonService {
 
   void syncAllWarehouses();
 
+  void syncStocksToOzon(UUID organizationId, Principal principal);
+
+  void syncAllStocksToOzon();
+
+  void pushVariantStockToOzon(UUID organizationId, UUID itemVariantId, UUID pointOfStorageId);
+
+  void pullAllPostings();
+
+  void pullAllReturns();
+
+  void reconcileAllStocks();
+
   List<OzonSubscriptionModel> getSubscriptions(UUID organizationId, Principal principal);
 
   List<WarehouseAvailabilityModel> getWarehouseAvailability(UUID organizationId, Principal principal);
 }
-

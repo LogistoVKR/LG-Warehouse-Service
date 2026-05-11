@@ -1,6 +1,7 @@
 package kz.logisto.lgwarehouseservice.data.repository;
 
 import kz.logisto.lgwarehouseservice.data.entity.PointOfStorage;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,4 +15,6 @@ public interface PointOfStorageRepository extends JpaRepository<PointOfStorage, 
   int countByOrganizationId(UUID organizationId);
 
   Optional<PointOfStorage> findByOrganizationIdAndOzonWarehouseId(UUID organizationId, Long ozonWarehouseId);
+
+  List<PointOfStorage> findAllByOrganizationIdAndOzonWarehouseIdIsNotNull(UUID organizationId);
 }

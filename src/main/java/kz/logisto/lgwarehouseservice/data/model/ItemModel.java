@@ -15,4 +15,5 @@ public class ItemModel {
   private UUID id;
   private String name;
   private String description;
+  private boolean ozonItem;
 }

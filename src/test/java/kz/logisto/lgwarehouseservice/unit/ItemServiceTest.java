@@ -68,7 +68,7 @@ class ItemServiceTest {
     Item item = new Item();
     item.setId(UUID.randomUUID());
     item.setOrganizationId(UUID.randomUUID());
-    ItemModel model = new ItemModel(item.getId(), "name", "desc");
+    ItemModel model = new ItemModel(item.getId(), "name", "desc", false);
 
     when(itemRepository.findById(item.getId())).thenReturn(Optional.of(item));
     when(itemMapper.toModel(item)).thenReturn(model);
@@ -120,7 +120,7 @@ class ItemServiceTest {
     entity.setId(UUID.randomUUID());
     Item saved = new Item();
     saved.setId(entity.getId());
-    ItemModel model = new ItemModel(saved.getId(), "item", "desc");
+    ItemModel model = new ItemModel(saved.getId(), "item", "desc", false);
 
     when(itemMapper.toEntity(dto)).thenReturn(entity);
     when(itemRepository.save(entity)).thenReturn(saved);
@@ -142,7 +142,7 @@ class ItemServiceTest {
     entity.setId(UUID.randomUUID());
     Item saved = new Item();
     saved.setId(entity.getId());
-    ItemModel model = new ItemModel(saved.getId(), "item", "desc");
+    ItemModel model = new ItemModel(saved.getId(), "item", "desc", false);
 
     when(itemMapper.toEntity(dto)).thenReturn(entity);
     when(itemRepository.save(entity)).thenReturn(saved);
@@ -175,7 +175,7 @@ class ItemServiceTest {
     Item item = new Item();
     item.setId(itemId);
     item.setOrganizationId(orgId);
-    ItemModel model = new ItemModel(itemId, "new name", "new desc");
+    ItemModel model = new ItemModel(itemId, "new name", "new desc", false);
 
     when(itemRepository.findById(itemId)).thenReturn(Optional.of(item));
     when(itemRepository.save(item)).thenReturn(item);

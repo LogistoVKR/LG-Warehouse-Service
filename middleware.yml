@@ -6,6 +6,8 @@ services:
     image: pgvector/pgvector:pg18-trixie
     ports:
       - "5432:5432"
+    volumes:
+      - postgres-db:/var/lib/postgresql/18/docker
     environment:
       POSTGRES_DB: mercurio
       POSTGRES_USER: mercurio
@@ -27,3 +29,6 @@ services:
       - start-dev
     extra_hosts:
       host.docker.internal: "host-gateway"
+
+volumes:
+  postgres-db:

@@ -10,4 +10,5 @@ import org.springframework.stereotype.Repository;
 public interface ItemVariantMovementRepository extends JpaRepository<ItemVariantMovement, UUID>,
     JpaSpecificationExecutor<ItemVariantMovement> {
 
+  boolean existsByReason(String reason);
 }

@@ -1,12 +1,12 @@
 package kz.logisto.lgwarehouseservice.data.entity;
 
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import java.util.List;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
@@ -32,6 +32,13 @@ public class Item {
 
   private UUID organizationId;
 
-  @OneToMany(mappedBy = "item", cascade = { CascadeType.MERGE, CascadeType.DETACH })
+  private Long ozonModelId;
+
+  @Transient
+  public boolean isOzonItem() {
+    return ozonModelId != null;
+  }
+
+  @OneToMany(mappedBy = "item", orphanRemoval = true)
   private List<ItemVariant> variants;
 }

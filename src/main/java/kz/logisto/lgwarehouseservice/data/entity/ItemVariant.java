@@ -1,7 +1,6 @@
 package kz.logisto.lgwarehouseservice.data.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -37,10 +36,10 @@ public class ItemVariant {
 
   private String barcode;
 
+  private Long ozonProductId;
+
   @Fetch(FetchMode.JOIN)
-  @ManyToOne(
-      fetch = FetchType.EAGER,
-      cascade = {CascadeType.MERGE, CascadeType.DETACH})
+  @ManyToOne(fetch = FetchType.EAGER)
   @JoinColumn(name = "item_id")
   private Item item;
 

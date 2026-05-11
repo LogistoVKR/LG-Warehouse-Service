@@ -26,4 +26,6 @@ public class ItemVariantMovementModel {
   private String reason;
   private MovementType type;
   private LocalDateTime created;
+  private UUID clientId;
+  private BigDecimal discount;
 }

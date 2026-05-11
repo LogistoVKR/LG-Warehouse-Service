@@ -14,6 +14,8 @@ public class RestProperty {
 
   private RestServiceProperty mcUserService;
 
+  private RestServiceProperty ozonApi;
+
   @Getter
   @Setter
   public static class RestServiceProperty {

@@ -11,12 +11,14 @@ import kz.logisto.lgwarehouseservice.data.model.ItemVariantMovementModel;
 import kz.logisto.lgwarehouseservice.data.repository.ItemVariantMovementRepository;
 import kz.logisto.lgwarehouseservice.exception.NotFoundException;
 import kz.logisto.lgwarehouseservice.mapper.ItemVariantMovementMapper;
+import java.math.BigDecimal;
 import kz.logisto.lgwarehouseservice.service.AccessService;
 import kz.logisto.lgwarehouseservice.service.ItemVariantMovementService;
 import kz.logisto.lgwarehouseservice.service.ItemVariantPointOfStorageService;
 import kz.logisto.lgwarehouseservice.service.ItemVariantService;
 import kz.logisto.lgwarehouseservice.service.OzonService;
 import kz.logisto.lgwarehouseservice.service.PointOfStorageService;
+import kz.logisto.lgwarehouseservice.service.UserService;
 import kz.logisto.lgwarehouseservice.util.ListUtils;
 import jakarta.persistence.criteria.Predicate;
 import java.security.Principal;
@@ -42,6 +44,7 @@ public class ItemVariantMovementServiceImpl implements ItemVariantMovementServic
   private final PointOfStorageService pointOfStorageService;
   private final ItemVariantPointOfStorageService itemVariantPointOfStorageService;
   private final OzonService ozonService;
+  private final UserService userService;
 
   @Override
   public Page<ItemVariantMovementModel> getAllPageable(UUID organizationId,
@@ -56,6 +59,17 @@ public class ItemVariantMovementServiceImpl implements ItemVariantMovementServic
   public ItemVariantMovementModel create(CreateItemVariantMovementDto dto, Principal principal) {
     ItemVariantMovement movement = mapper.toEntity(dto);
     accessService.canManageWarehouseOrThrow(principal.getName(), dto.organizationId());
+
+    if (dto.clientId() != null && dto.pricePerItem() != null) {
+      userService.getClientPersonalDiscount(dto.organizationId(), dto.clientId())
+          .ifPresent(discount -> {
+            BigDecimal discounted = dto.pricePerItem()
+                .multiply(BigDecimal.ONE.subtract(discount.divide(BigDecimal.valueOf(100))));
+            movement.setPricePerItem(discounted);
+            movement.setClientId(dto.clientId());
+            movement.setDiscount(discount);
+          });
+    }
 
     updateMovementRelations(dto.fromPointOfStorageId(), dto.toPointOfStorageId(),
         dto.itemVariantId(), movement, principal);

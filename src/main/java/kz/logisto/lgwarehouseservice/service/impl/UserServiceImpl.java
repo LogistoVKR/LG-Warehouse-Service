@@ -1,12 +1,15 @@
 package kz.logisto.lgwarehouseservice.service.impl;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
 import kz.logisto.lgwarehouseservice.config.property.RestProperty;
 import kz.logisto.lgwarehouseservice.config.property.RestProperty.RestServiceProperty;
 import kz.logisto.lgwarehouseservice.data.dto.PageResponse;
+import kz.logisto.lgwarehouseservice.data.model.ClientMembershipModel;
 import kz.logisto.lgwarehouseservice.data.model.OrganizationModel;
 import kz.logisto.lgwarehouseservice.data.model.OzonApiKeyModel;
 import kz.logisto.lgwarehouseservice.service.UserService;
@@ -98,6 +101,30 @@ public class UserServiceImpl implements UserService {
           organizationId, exception.getStatusCode(), exception.getMessage());
     }
     return null;
+  }
+
+  @Override
+  public Optional<BigDecimal> getClientPersonalDiscount(UUID organizationId, UUID clientId) {
+    URI uri = UriComponentsBuilder.newInstance()
+        .path(property.getContextPath() + "/organizations/{organizationId}/clients/membership")
+        .queryParam("clientId", clientId)
+        .build(organizationId);
+
+    try {
+      ClientMembershipModel result = restClient.get()
+          .uri(uri)
+          .attributes(CLIENT_ATTRIBUTES)
+          .retrieve()
+          .body(ClientMembershipModel.class);
+      return Optional.ofNullable(result).map(ClientMembershipModel::personalDiscount);
+    } catch (HttpStatusCodeException e) {
+      if (e.getStatusCode().value() == 404) {
+        return Optional.empty();
+      }
+      log.error("Cannot get client discount for org {} client {} -> {}: {}",
+          organizationId, clientId, e.getStatusCode(), e.getMessage());
+      return Optional.empty();
+    }
   }
 
   @Override

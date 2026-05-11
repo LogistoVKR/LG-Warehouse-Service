@@ -1,5 +1,7 @@
 package kz.logisto.lgwarehouseservice.service;
 
+import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.UUID;
 import kz.logisto.lgwarehouseservice.data.dto.PageResponse;
 import kz.logisto.lgwarehouseservice.data.model.OrganizationModel;
@@ -15,4 +17,6 @@ public interface UserService {
   OzonApiKeyModel getOzonApiKeyByOrganizationId(UUID organizationId);
 
   PageResponse<OrganizationModel> getOrganizations(Pageable pageable);
+
+  Optional<BigDecimal> getClientPersonalDiscount(UUID organizationId, UUID clientId);
 }

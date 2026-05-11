@@ -1,5 +1,6 @@
 package kz.logisto.lgwarehouseservice.data.entity;
 
+import jakarta.persistence.Column;
 import kz.logisto.lgwarehouseservice.data.enums.MovementType;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
@@ -61,6 +62,11 @@ public class ItemVariantMovement {
   private LocalDateTime created;
 
   private UUID organizationId;
+
+  private UUID clientId;
+
+  @Column(precision = 5, scale = 2)
+  private BigDecimal discount;
 
   public UUID getFromPointOfStorageId() {
     return fromPointOfStorage != null ? fromPointOfStorage.getId() : null;

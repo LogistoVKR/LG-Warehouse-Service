@@ -17,4 +17,5 @@ public record CreateItemVariantMovementDto(UUID fromPointOfStorageId, UUID toPoi
                                            Currency currency, @Min(1) Integer quantity,
                                            @Size(max = 255) String reason,
                                            @NotNull MovementType type, LocalDateTime created,
-                                           @NotNull UUID organizationId) { }
+                                           @NotNull UUID organizationId,
+                                           UUID clientId) { }
